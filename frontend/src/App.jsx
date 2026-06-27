@@ -5,7 +5,6 @@ import LandingPage from './components/LandingPage'
 import ModelSelector from './components/ModelSelector'
 import InputForm from './components/InputForm'
 import ResultsPage from './components/ResultsPage'
-import TelegramBubble from './components/TelegramBubble'
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('landing') // landing, modelSelect, form, results
@@ -66,7 +65,6 @@ export default function App() {
         <main className="main-content">
           {renderPage()}
         </main>
-        <TelegramBubble botUsername="SanaaaAI_bot" />
       </div>
     </LanguageProvider>
   )
