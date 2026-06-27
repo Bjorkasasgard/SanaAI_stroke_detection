@@ -1,3 +1,11 @@
+---
+title: SanaAI Backend
+emoji: 🏥
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
 # SanaAI: Stroke Detection System
 
 [English Version Below]
