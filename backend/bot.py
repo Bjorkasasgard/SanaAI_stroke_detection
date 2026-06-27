@@ -627,7 +627,14 @@ def main():
 
     load_models()
 
-    application = Application.builder().token(TOKEN).build()
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .connect_timeout(30.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .build()
+    )
 
     conv = ConversationHandler(
         entry_points=[
@@ -655,8 +662,15 @@ def main():
     application.add_handler(conv)
 
     logger.info("🚀 Sana AI Bot is running... Press Ctrl+C to stop.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    main()
+    import time
+    while True:
+        try:
+            main()
+        except Exception as e:
+            logger.error(f"Bot crashed with error: {e}")
+            logger.info("Restarting bot in 10 seconds...")
+            time.sleep(10)
