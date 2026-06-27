@@ -1,5 +1,5 @@
 """
-bot.py — Telegram Bot untuk Sana AI Stroke Screening
+bot.py — Telegram Bot untuk Sana AI Stroke Screening (API Client Version)
 Bilingual: Indonesia 🇮🇩 & English 🇬🇧
 Menggunakan python-telegram-bot v21+
 """
@@ -7,10 +7,7 @@ Menggunakan python-telegram-bot v21+
 import os
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
-
-import joblib
-import numpy as np
+import requests
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -28,6 +25,7 @@ from telegram.ext import (
 # ---------------------------------------------------------------------------
 load_dotenv(Path(__file__).parent / ".env")
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+API_URL = "https://xvasthunter-sana-backend.hf.space/api/predict"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -35,58 +33,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sana-bot")
 
-# ---------------------------------------------------------------------------
-# Load Models
-# ---------------------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent
-MODELS_DIR = BASE_DIR / "models"
-
-loaded_models: Dict[str, Any] = {}
-scaler: Any = None
-encoding_maps: Dict[str, Dict[str, int]] = {}
-feature_names: List[str] = []
-models_ready = False
-
-
-def load_models():
-    global loaded_models, scaler, encoding_maps, feature_names, models_ready
-    try:
-        for name, fname in [
-            ("logistic_regression", "logistic_regression.pkl"),
-            ("decision_tree", "decision_tree.pkl"),
-            ("knn", "knn.pkl"),
-        ]:
-            p = MODELS_DIR / fname
-            if p.exists():
-                loaded_models[name] = joblib.load(p)
-
-        sp = MODELS_DIR / "scaler.pkl"
-        if sp.exists():
-            scaler = joblib.load(sp)
-
-        ep = MODELS_DIR / "encoding_maps.pkl"
-        if ep.exists():
-            encoding_maps = joblib.load(ep)
-
-        fp = MODELS_DIR / "feature_names.pkl"
-        if fp.exists():
-            feature_names = joblib.load(fp)
-
-        if loaded_models and scaler is not None and encoding_maps and feature_names:
-            models_ready = True
-            logger.info("✅ All models loaded successfully.")
-        else:
-            logger.warning("⚠️  Models not ready. Run train_model.py first.")
-    except Exception as e:
-        logger.error("Failed to load models: %s", e)
-
 
 # ---------------------------------------------------------------------------
 # Translations
 # ---------------------------------------------------------------------------
 STRINGS = {
     "id": {
-        # Welcome
         "welcome": (
             "👋 *Selamat datang di Sana AI Bot!*\n\n"
             "Saya akan membantu Anda melakukan *screening risiko stroke* berbasis AI.\n\n"
@@ -106,13 +58,11 @@ STRINGS = {
         "q_bmi":         "*Pertanyaan 9/10*\nBerapa nilai BMI (Indeks Massa Tubuh) Anda?\n\nKetik angkanya (contoh: `24.5`)\n_Normal: 18.5–24.9_",
         "q_smoking":     "*Pertanyaan 10/10*\nBagaimana status merokok Anda?",
         "analyzing":     "⏳ Sedang menganalisis data Anda...",
-        "model_not_ready":"❌ *Model belum siap.* Pastikan server sudah dijalankan dan model sudah dilatih.\n\nJalankan: `python train_model.py`",
-        "error":         "❌ Terjadi kesalahan saat analisis. Silakan coba lagi dengan /start",
+        "error":         "❌ Terjadi kesalahan saat menghubungi server AI. Silakan coba lagi nanti.",
         "cancelled":     "❎ Analisis dibatalkan. Ketik /start untuk memulai kembali.",
         "invalid_age":   "⚠️ Masukkan angka usia yang valid (0–120). Coba lagi:",
         "invalid_glucose":"⚠️ Masukkan angka glukosa yang valid (40–500 mg/dL). Coba lagi:",
         "invalid_bmi":   "⚠️ Masukkan nilai BMI yang valid (10–100). Coba lagi:",
-        # Buttons
         "btn_male":      "👨 Laki-laki",
         "btn_female":    "👩 Perempuan",
         "btn_yes":       "✅ Ya",
@@ -131,7 +81,6 @@ STRINGS = {
         "btn_never_smk": "🚭 Tidak Pernah Merokok",
         "btn_unknown":   "❓ Tidak Diketahui",
         "btn_restart":   "🔄 Analisis Ulang",
-        # Result
         "result_header":  "🏥 *HASIL ANALISIS SANA AI*",
         "result_prob":    "📊 *Probabilitas Stroke:*",
         "result_risk":    "⚡ *Tingkat Risiko:*",
@@ -148,35 +97,11 @@ STRINGS = {
         "no":            "Tidak",
         "years":         "tahun",
         "result_rec":    "💡 *Rekomendasi:*",
-        "rec_high": [
-            "⚠️ Segera konsultasikan ke dokter",
-            "Pantau tekanan darah secara rutin",
-            "Kurangi konsumsi gula dan lemak",
-            "Hindari merokok & alkohol",
-            "Lakukan pemeriksaan jantung",
-        ],
-        "rec_med": [
-            "Konsultasikan ke dokter untuk evaluasi lebih lanjut",
-            "Terapkan pola makan sehat",
-            "Olahraga rutin minimal 30 menit/hari",
-            "Pantau kadar glukosa secara berkala",
-        ],
-        "rec_low": [
-            "Pertahankan gaya hidup sehat ✅",
-            "Rutin cek kesehatan tahunan",
-            "Tetap aktif berolahraga",
-        ],
-        "disclaimer":    "⚠️ _Hasil ini bersifat indikatif dan BUKAN diagnosis medis profesional._",
-        "risk_low":      "RENDAH 🟢",
-        "risk_med":      "SEDANG 🟡",
-        "risk_high":     "TINGGI 🔴",
         "model_lr":      "Logistic Regression ⭐",
         "model_dt":      "Decision Tree 🌳",
         "model_knn":     "K-Nearest Neighbors 👥",
-        "choose_model":  "Pilih model AI yang ingin digunakan:",
     },
     "en": {
-        # Welcome
         "welcome": (
             "👋 *Welcome to Sana AI Bot!*\n\n"
             "I will help you perform an AI-based *stroke risk screening*.\n\n"
@@ -196,13 +121,11 @@ STRINGS = {
         "q_bmi":         "*Question 9/10*\nWhat is your BMI (Body Mass Index)?\n\nType the value (e.g. `24.5`)\n_Normal: 18.5–24.9_",
         "q_smoking":     "*Question 10/10*\nWhat is your smoking status?",
         "analyzing":     "⏳ Analyzing your data...",
-        "model_not_ready":"❌ *Models not ready.* Make sure the server is running and models are trained.\n\nRun: `python train_model.py`",
-        "error":         "❌ An error occurred during analysis. Please try again with /start",
+        "error":         "❌ An error occurred connecting to the AI server. Please try again later.",
         "cancelled":     "❎ Analysis cancelled. Type /start to begin again.",
         "invalid_age":   "⚠️ Enter a valid age (0–120). Try again:",
         "invalid_glucose":"⚠️ Enter a valid glucose value (40–500 mg/dL). Try again:",
         "invalid_bmi":   "⚠️ Enter a valid BMI value (10–100). Try again:",
-        # Buttons
         "btn_male":      "👨 Male",
         "btn_female":    "👩 Female",
         "btn_yes":       "✅ Yes",
@@ -221,7 +144,6 @@ STRINGS = {
         "btn_never_smk": "🚭 Never Smoked",
         "btn_unknown":   "❓ Unknown",
         "btn_restart":   "🔄 Analyze Again",
-        # Result
         "result_header":  "🏥 *SANA AI ANALYSIS RESULT*",
         "result_prob":    "📊 *Stroke Probability:*",
         "result_risk":    "⚡ *Risk Level:*",
@@ -238,38 +160,13 @@ STRINGS = {
         "no":            "No",
         "years":         "years old",
         "result_rec":    "💡 *Recommendations:*",
-        "rec_high": [
-            "⚠️ Consult a doctor immediately",
-            "Monitor your blood pressure regularly",
-            "Reduce sugar and fat intake",
-            "Avoid smoking & alcohol",
-            "Get a cardiac check-up",
-        ],
-        "rec_med": [
-            "Consult a doctor for further evaluation",
-            "Adopt a healthy diet",
-            "Exercise at least 30 minutes/day",
-            "Monitor blood glucose periodically",
-        ],
-        "rec_low": [
-            "Maintain your healthy lifestyle ✅",
-            "Get annual health check-ups",
-            "Stay physically active",
-        ],
-        "disclaimer":    "⚠️ _This result is indicative and NOT a professional medical diagnosis._",
-        "risk_low":      "LOW 🟢",
-        "risk_med":      "MEDIUM 🟡",
-        "risk_high":     "HIGH 🔴",
         "model_lr":      "Logistic Regression ⭐",
         "model_dt":      "Decision Tree 🌳",
         "model_knn":     "K-Nearest Neighbors 👥",
-        "choose_model":  "Choose the AI model to use:",
     },
 }
 
-
 def s(ctx: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
-    """Get translated string for user's chosen language."""
     lang = ctx.user_data.get("lang", "id")
     text = STRINGS[lang].get(key, STRINGS["id"].get(key, key))
     if kwargs:
@@ -296,48 +193,31 @@ def s(ctx: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
 ) = range(12)
 
 
-# ---------------------------------------------------------------------------
-# Keyboard helper
-# ---------------------------------------------------------------------------
 def kb(*rows) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton(t, callback_data=v) for t, v in row] for row in rows])
 
 
 # ---------------------------------------------------------------------------
-# Prediction Logic
+# Prediction Logic via API
 # ---------------------------------------------------------------------------
-def run_prediction(data: dict) -> dict:
-    model_id = data["model"]
-    model = loaded_models[model_id]
-
-    cat_map = {
-        "gender":         encoding_maps.get("gender", {"Female": 0, "Male": 1}),
-        "ever_married":   encoding_maps.get("ever_married", {"No": 0, "Yes": 1}),
-        "work_type":      encoding_maps.get("work_type", {"Govt_job": 0, "Never_worked": 1, "Private": 2, "Self-employed": 3, "children": 4}),
-        "Residence_type": encoding_maps.get("Residence_type", {"Rural": 0, "Urban": 1}),
-        "smoking_status": encoding_maps.get("smoking_status", {"Unknown": 0, "formerly smoked": 1, "never smoked": 2, "smokes": 3}),
+def run_prediction_api(data: dict) -> dict:
+    lang = data.get("lang", "id")
+    payload = {
+        "model": data["model"],
+        "gender": data["gender"],
+        "age": data["age"],
+        "hypertension": data["hypertension"],
+        "heart_disease": data["heart_disease"],
+        "ever_married": data["ever_married"],
+        "work_type": data["work_type"],
+        "residence_type": data["residence_type"],
+        "avg_glucose_level": data["avg_glucose_level"],
+        "bmi": data["bmi"],
+        "smoking_status": data["smoking_status"],
     }
-
-    feature_vals = {
-        "gender":            cat_map["gender"].get(data["gender"], 0),
-        "age":               float(data["age"]),
-        "hypertension":      int(data["hypertension"]),
-        "heart_disease":     int(data["heart_disease"]),
-        "ever_married":      cat_map["ever_married"].get(data["ever_married"], 0),
-        "work_type":         cat_map["work_type"].get(data["work_type"], 2),
-        "Residence_type":    cat_map["Residence_type"].get(data["residence_type"], 1),
-        "avg_glucose_level": float(data["avg_glucose_level"]),
-        "bmi":               float(data["bmi"]),
-        "smoking_status":    cat_map["smoking_status"].get(data["smoking_status"], 0),
-    }
-
-    X = np.array([[feature_vals[f] for f in feature_names]])
-    X_scaled = scaler.transform(X)
-
-    prediction = int(model.predict(X_scaled)[0])
-    prob = float(model.predict_proba(X_scaled)[0][1])
-
-    return {"prediction": prediction, "probability": prob, "model_used": model_id}
+    r = requests.post(f"{API_URL}?lang={lang}", json=payload, timeout=10)
+    r.raise_for_status()
+    return r.json()
 
 
 # ---------------------------------------------------------------------------
@@ -345,10 +225,7 @@ def run_prediction(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
-    lang_kb = kb(
-        [("🇮🇩 Bahasa Indonesia", "lang_id")],
-        [("🇬🇧 English", "lang_en")],
-    )
+    lang_kb = kb([("🇮🇩 Bahasa Indonesia", "lang_id")], [("🇬🇧 English", "lang_en")])
     msg = "🌐 *Pilih bahasa / Choose language:*"
     if update.message:
         await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=lang_kb)
@@ -360,9 +237,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def choose_lang(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
-    lang = "id" if q.data == "lang_id" else "en"
-    ctx.user_data["lang"] = lang
-
+    ctx.user_data["lang"] = "id" if q.data == "lang_id" else "en"
     model_kb = kb(
         [(s(ctx, "model_lr"), "logistic_regression")],
         [(s(ctx, "model_dt"), "decision_tree")],
@@ -376,19 +251,11 @@ async def choose_model(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
     ctx.user_data["model"] = q.data
-
-    model_names = {
-        "logistic_regression": s(ctx, "model_lr"),
-        "decision_tree": s(ctx, "model_dt"),
-        "knn": s(ctx, "model_knn"),
-    }
-    gender_kb = kb(
-        [(s(ctx, "btn_male"), "Male"), (s(ctx, "btn_female"), "Female")],
-    )
+    model_names = {"logistic_regression": s(ctx, "model_lr"), "decision_tree": s(ctx, "model_dt"), "knn": s(ctx, "model_knn")}
     await q.edit_message_text(
         s(ctx, "model_selected", name=model_names[q.data]),
         parse_mode="Markdown",
-        reply_markup=gender_kb,
+        reply_markup=kb([(s(ctx, "btn_male"), "Male"), (s(ctx, "btn_female"), "Female")]),
     )
     return ASK_GENDER
 
@@ -404,14 +271,9 @@ async def ask_gender(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def ask_age(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         age = float(update.message.text.strip())
-        if age < 0 or age > 120:
-            raise ValueError
+        if age < 0 or age > 120: raise ValueError
         ctx.user_data["age"] = age
-        await update.message.reply_text(
-            s(ctx, "q_hypertension"),
-            parse_mode="Markdown",
-            reply_markup=kb([(s(ctx, "btn_yes"), "1"), (s(ctx, "btn_no"), "0")]),
-        )
+        await update.message.reply_text(s(ctx, "q_hypertension"), parse_mode="Markdown", reply_markup=kb([(s(ctx, "btn_yes"), "1"), (s(ctx, "btn_no"), "0")]))
         return ASK_HYPERTENSION
     except ValueError:
         await update.message.reply_text(s(ctx, "invalid_age"))
@@ -422,11 +284,7 @@ async def ask_hypertension(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> in
     q = update.callback_query
     await q.answer()
     ctx.user_data["hypertension"] = int(q.data)
-    await q.edit_message_text(
-        s(ctx, "q_heart"),
-        parse_mode="Markdown",
-        reply_markup=kb([(s(ctx, "btn_yes"), "1"), (s(ctx, "btn_no"), "0")]),
-    )
+    await q.edit_message_text(s(ctx, "q_heart"), parse_mode="Markdown", reply_markup=kb([(s(ctx, "btn_yes"), "1"), (s(ctx, "btn_no"), "0")]))
     return ASK_HEART
 
 
@@ -434,11 +292,7 @@ async def ask_heart(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
     ctx.user_data["heart_disease"] = int(q.data)
-    await q.edit_message_text(
-        s(ctx, "q_married"),
-        parse_mode="Markdown",
-        reply_markup=kb([(s(ctx, "btn_married"), "Yes"), (s(ctx, "btn_single"), "No")]),
-    )
+    await q.edit_message_text(s(ctx, "q_married"), parse_mode="Markdown", reply_markup=kb([(s(ctx, "btn_married"), "Yes"), (s(ctx, "btn_single"), "No")]))
     return ASK_MARRIED
 
 
@@ -446,15 +300,11 @@ async def ask_married(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
     ctx.user_data["ever_married"] = q.data
-    await q.edit_message_text(
-        s(ctx, "q_work"),
-        parse_mode="Markdown",
-        reply_markup=kb(
-            [(s(ctx, "btn_govt"), "Govt_job"), (s(ctx, "btn_private"), "Private")],
-            [(s(ctx, "btn_self"), "Self-employed"), (s(ctx, "btn_children"), "children")],
-            [(s(ctx, "btn_never_work"), "Never_worked")],
-        ),
-    )
+    await q.edit_message_text(s(ctx, "q_work"), parse_mode="Markdown", reply_markup=kb(
+        [(s(ctx, "btn_govt"), "Govt_job"), (s(ctx, "btn_private"), "Private")],
+        [(s(ctx, "btn_self"), "Self-employed"), (s(ctx, "btn_children"), "children")],
+        [(s(ctx, "btn_never_work"), "Never_worked")],
+    ))
     return ASK_WORK
 
 
@@ -462,11 +312,7 @@ async def ask_work(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
     ctx.user_data["work_type"] = q.data
-    await q.edit_message_text(
-        s(ctx, "q_residence"),
-        parse_mode="Markdown",
-        reply_markup=kb([(s(ctx, "btn_rural"), "Rural"), (s(ctx, "btn_urban"), "Urban")]),
-    )
+    await q.edit_message_text(s(ctx, "q_residence"), parse_mode="Markdown", reply_markup=kb([(s(ctx, "btn_rural"), "Rural"), (s(ctx, "btn_urban"), "Urban")]))
     return ASK_RESIDENCE
 
 
@@ -481,8 +327,7 @@ async def ask_residence(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def ask_glucose(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = float(update.message.text.strip())
-        if val < 40 or val > 500:
-            raise ValueError
+        if val < 40 or val > 500: raise ValueError
         ctx.user_data["avg_glucose_level"] = val
         await update.message.reply_text(s(ctx, "q_bmi"), parse_mode="Markdown")
         return ASK_BMI
@@ -494,17 +339,12 @@ async def ask_glucose(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def ask_bmi(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = float(update.message.text.strip())
-        if val < 10 or val > 100:
-            raise ValueError
+        if val < 10 or val > 100: raise ValueError
         ctx.user_data["bmi"] = val
-        await update.message.reply_text(
-            s(ctx, "q_smoking"),
-            parse_mode="Markdown",
-            reply_markup=kb(
-                [(s(ctx, "btn_smokes"), "smokes"), (s(ctx, "btn_former"), "formerly smoked")],
-                [(s(ctx, "btn_never_smk"), "never smoked"), (s(ctx, "btn_unknown"), "Unknown")],
-            ),
-        )
+        await update.message.reply_text(s(ctx, "q_smoking"), parse_mode="Markdown", reply_markup=kb(
+            [(s(ctx, "btn_smokes"), "smokes"), (s(ctx, "btn_former"), "formerly smoked")],
+            [(s(ctx, "btn_never_smk"), "never smoked"), (s(ctx, "btn_unknown"), "Unknown")],
+        ))
         return ASK_SMOKING
     except ValueError:
         await update.message.reply_text(s(ctx, "invalid_bmi"))
@@ -518,31 +358,10 @@ async def ask_smoking(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     await q.edit_message_text(s(ctx, "analyzing"), parse_mode="Markdown")
 
-    if not models_ready:
-        retry_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 /start", callback_data="restart")]])
-        await q.message.reply_text(
-            s(ctx, "model_not_ready"),
-            parse_mode="Markdown",
-            reply_markup=retry_kb,
-        )
-        return ConversationHandler.END
-
     try:
-        result = run_prediction(ctx.user_data)
-        prob = result["probability"]
-        prob_pct = prob * 100
-
-        if prob < 0.30:
-            risk_label = s(ctx, "risk_low")
-            recs = STRINGS[ctx.user_data.get("lang", "id")]["rec_low"]
-        elif prob < 0.60:
-            risk_label = s(ctx, "risk_med")
-            recs = STRINGS[ctx.user_data.get("lang", "id")]["rec_med"]
-        else:
-            risk_label = s(ctx, "risk_high")
-            recs = STRINGS[ctx.user_data.get("lang", "id")]["rec_high"]
-
-        # Build visual bar
+        res = run_prediction_api(ctx.user_data)
+        
+        prob_pct = res["probability"] * 100
         filled = int(prob_pct / 10)
         bar = "█" * filled + "░" * (10 - filled)
 
@@ -556,8 +375,8 @@ async def ask_smoking(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{s(ctx, 'result_prob')} `{prob_pct:.1f}%`\n"
             f"`[{bar}] {prob_pct:.1f}%`\n\n"
-            f"{s(ctx, 'result_risk')} *{risk_label}*\n"
-            f"{s(ctx, 'result_model')} {result['model_used'].replace('_', ' ').title()}\n\n"
+            f"{s(ctx, 'result_risk')} *{res['risk_level']} {res['risk_color']}*\n"
+            f"{s(ctx, 'result_model')} {res['model_used'].replace('_', ' ').title()}\n\n"
             f"{s(ctx, 'result_data')}\n"
             f"• {s(ctx, 'result_label_gender')}: {d['gender']}\n"
             f"• {s(ctx, 'result_label_age')}: {d['age']:.0f} {s(ctx, 'years')}\n"
@@ -568,40 +387,14 @@ async def ask_smoking(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             f"• {s(ctx, 'result_label_bmi')}: {d['bmi']:.1f}\n\n"
             f"{s(ctx, 'result_rec')}\n"
         )
-        for rec in recs:
+        for rec in res["recommendations"]:
             msg += f"• {rec}\n"
 
-        msg += f"\n{s(ctx, 'disclaimer')}"
-
-        restart_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(s(ctx, "btn_restart"), callback_data="restart")]
-        ])
+        restart_kb = InlineKeyboardMarkup([[InlineKeyboardButton(s(ctx, "btn_restart"), callback_data="restart")]])
         await q.message.reply_text(msg, parse_mode="Markdown", reply_markup=restart_kb)
 
-    except KeyError as e:
-        logger.error("Missing data key in prediction: %s", e)
-        retry_kb = InlineKeyboardMarkup([[InlineKeyboardButton(s(ctx, "btn_restart"), callback_data="restart")]])
-        lang = ctx.user_data.get("lang", "id")
-        err_msg = (
-            "⚠️ *Data tidak lengkap.*\nCoba ulangi screening dari awal."
-            if lang == "id" else
-            "⚠️ *Incomplete data.*\nPlease restart the screening."
-        )
-        await q.message.reply_text(err_msg, parse_mode="Markdown", reply_markup=retry_kb)
-
-    except ValueError as e:
-        logger.error("Value error in prediction: %s", e)
-        retry_kb = InlineKeyboardMarkup([[InlineKeyboardButton(s(ctx, "btn_restart"), callback_data="restart")]])
-        lang = ctx.user_data.get("lang", "id")
-        err_msg = (
-            "⚠️ *Nilai data tidak valid.*\nPastikan semua input sudah benar, lalu coba lagi."
-            if lang == "id" else
-            "⚠️ *Invalid data values.*\nMake sure all inputs are correct and try again."
-        )
-        await q.message.reply_text(err_msg, parse_mode="Markdown", reply_markup=retry_kb)
-
     except Exception as e:
-        logger.error("Unexpected prediction error: %s", e)
+        logger.error("API error: %s", e)
         retry_kb = InlineKeyboardMarkup([[InlineKeyboardButton(s(ctx, "btn_restart"), callback_data="restart")]])
         await q.message.reply_text(s(ctx, "error"), parse_mode="Markdown", reply_markup=retry_kb)
 
@@ -620,16 +413,12 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def get_application():
+def main():
     if not TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN not found in .env!")
-        return None
+        return
 
-    application = (
-        Application.builder()
-        .token(TOKEN)
-        .build()
-    )
+    application = Application.builder().token(TOKEN).build()
 
     conv = ConversationHandler(
         entry_points=[
@@ -655,5 +444,17 @@ def get_application():
     )
 
     application.add_handler(conv)
-    return application
 
+    logger.info("🚀 Sana AI API Bot is running locally... Press Ctrl+C to stop.")
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    import time
+    while True:
+        try:
+            main()
+        except Exception as e:
+            logger.error(f"Bot crashed with error: {e}")
+            logger.info("Restarting bot in 10 seconds...")
+            time.sleep(10)

@@ -14,21 +14,10 @@ import joblib
 import numpy as np
 import feedparser
 import os
-import socket
-
-# --- HACK: Force IPv4 to fix Hugging Face Spaces IPv6 timeout with Telegram API ---
-old_getaddrinfo = socket.getaddrinfo
-def new_getaddrinfo(*args, **kwargs):
-    responses = old_getaddrinfo(*args, **kwargs)
-    return [res for res in responses if res[0] == socket.AF_INET]
-socket.getaddrinfo = new_getaddrinfo
-# ---------------------------------------------------------------------------------
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from telegram import Update
-import bot
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -50,7 +39,6 @@ scaler: Any = None
 encoding_maps: Dict[str, Dict[str, int]] = {}
 feature_names: List[str] = []
 models_ready: bool = False
-ptb_app = None
 
 # ---------------------------------------------------------------------------
 # Translations
@@ -118,7 +106,7 @@ class PredictionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global loaded_models, scaler, encoding_maps, feature_names, models_ready, ptb_app
+    global loaded_models, scaler, encoding_maps, feature_names, models_ready
 
     model_files = {
         "logistic_regression": "logistic_regression.pkl",
@@ -146,26 +134,10 @@ async def lifespan(app: FastAPI):
 
         if loaded_models and scaler is not None and encoding_maps and feature_names:
             models_ready = True
-            bot.loaded_models = loaded_models
-            bot.scaler = scaler
-            bot.encoding_maps = encoding_maps
-            bot.feature_names = feature_names
-            bot.models_ready = True
     except Exception as exc:
         logger.error("Gagal memuat artefak model: %s", exc)
 
-    # Initialize Telegram Bot Webhook
-    ptb_app = bot.get_application()
-    if ptb_app:
-        await ptb_app.initialize()
-        await ptb_app.start()
-        await ptb_app.bot.set_webhook(url="https://xvasthunter-sana-backend.hf.space/webhook")
-
     yield
-
-    if ptb_app:
-        await ptb_app.stop()
-        await ptb_app.shutdown()
 
 app: FastAPI = FastAPI(title="Sana AI API", lifespan=lifespan)
 
@@ -293,13 +265,6 @@ def _generate_recommendations(request: PredictionRequest, risk_level: str, lang:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    if ptb_app:
-        update = Update.de_json(data=await request.json(), bot=ptb_app.bot)
-        await ptb_app.process_update(update)
-    return Response(status_code=200)
-
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "models_loaded": models_ready}
