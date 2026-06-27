@@ -1,0 +1,22 @@
+services:
+  # 1. FastAPI Web Service
+  - type: web
+    name: sana-backend
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+
+  # 2. Telegram Bot Background Worker
+  - type: worker
+    name: sana-telegram-bot
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false # Set token directly in Render Dashboard later
