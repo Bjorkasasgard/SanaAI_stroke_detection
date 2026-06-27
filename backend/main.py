@@ -14,6 +14,16 @@ import joblib
 import numpy as np
 import feedparser
 import os
+import socket
+
+# --- HACK: Force IPv4 to fix Hugging Face Spaces IPv6 timeout with Telegram API ---
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [res for res in responses if res[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+# ---------------------------------------------------------------------------------
+
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
