@@ -620,19 +620,14 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def main():
+def get_application():
     if not TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN not found in .env!")
-        return
-
-    load_models()
+        return None
 
     application = (
         Application.builder()
         .token(TOKEN)
-        .connect_timeout(30.0)
-        .read_timeout(30.0)
-        .write_timeout(30.0)
         .build()
     )
 
@@ -660,17 +655,5 @@ def main():
     )
 
     application.add_handler(conv)
+    return application
 
-    logger.info("🚀 Sana AI Bot is running... Press Ctrl+C to stop.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-
-
-if __name__ == "__main__":
-    import time
-    while True:
-        try:
-            main()
-        except Exception as e:
-            logger.error(f"Bot crashed with error: {e}")
-            logger.info("Restarting bot in 10 seconds...")
-            time.sleep(10)

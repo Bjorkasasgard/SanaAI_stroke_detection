@@ -20,4 +20,4 @@ RUN python train_model.py
 EXPOSE 7860
 
 # Command to run both the FastAPI server and the Telegram bot
-CMD uvicorn main:app --host 0.0.0.0 --port 7860 & python bot.py
+CMD uvicorn main:app --host 0.0.0.0 --port 7860
