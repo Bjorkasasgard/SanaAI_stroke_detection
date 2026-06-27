@@ -42,7 +42,7 @@ export default function ModelSelector({ onSelect, selectedModel, onBack }) {
 
   useEffect(() => {
     setLoading(true)
-    const baseUrl = import.meta.env.VITE_API_URL || ''
+    const baseUrl = import.meta.env.VITE_API_URL || 'https://xvasthunter-sana-backend.hf.space'
     fetch(`${baseUrl}/api/models?lang=${lang}`)
       .then(res => res.json())
       .then(data => {

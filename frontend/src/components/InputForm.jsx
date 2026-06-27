@@ -106,7 +106,7 @@ export default function InputForm({ selectedModel, onSubmit, onBack }) {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 15000)
 
-      const baseUrl = import.meta.env.VITE_API_URL || ''
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://xvasthunter-sana-backend.hf.space'
       const res = await fetch(`${baseUrl}/api/predict?lang=${lang}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
